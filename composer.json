@@ -1,0 +1,15 @@
+{
+  "name": "mainmoney/mm-aggr-wordpress",
+  "description": "WordPress plugin for MainMoney aggregator payments",
+  "type": "wordpress-plugin",
+  "license": "SEE LICENSE IN LICENSE",
+  "require": {
+    "php": "^8.2"
+  },
+  "require-dev": {
+    "phpunit/phpunit": "^11.5"
+  },
+  "suggest": {
+    "mainmoney/mm-aggr-php-sdk": "Official PHP SDK (required when the SDK is published)"
+  }
+}

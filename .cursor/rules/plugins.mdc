@@ -1,0 +1,9 @@
+---
+description: WordPress plugin must use official PHP and JS SDKs
+alwaysApply: true
+---
+
+# Plugin SDKs
+
+- Backend: official PHP SDK only.
+- Frontend: official JS/TS SDK only. Do not write a custom aggregator JS client.
