@@ -14,10 +14,22 @@ by MainMoney SARL.
 git clone git@github.com:MainMoney-Inc/mm_aggr_wordpress.git
 ```
 
+From the contrib hub, this tree is `contrib/plugins/wordpress` with the PHP SDK
+at `contrib/sdks/php` and the JS SDK at `contrib/sdks/javascript`.
+
 ## Setup
 
 ```bash
 composer install
+npm install
+npm run build
+```
+
+## Test
+
+```bash
+vendor/bin/phpunit
+vendor/bin/phpstan analyse
 ```
 
 ## Branches and commits

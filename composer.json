@@ -3,13 +3,37 @@
   "description": "WordPress plugin for MainMoney aggregator payments",
   "type": "wordpress-plugin",
   "license": "SEE LICENSE IN LICENSE",
+  "minimum-stability": "dev",
+  "prefer-stable": true,
+  "repositories": [
+    {
+      "type": "path",
+      "url": "../../sdks/php"
+    }
+  ],
   "require": {
-    "php": "^8.2"
+    "php": "^8.2",
+    "mainmoney/mm-aggr-php-sdk": "@dev"
   },
   "require-dev": {
-    "phpunit/phpunit": "^11.5"
+    "phpunit/phpunit": "^11.5",
+    "phpstan/phpstan": "^2.1"
   },
-  "suggest": {
-    "mainmoney/mm-aggr-php-sdk": "Official PHP SDK (required when the SDK is published)"
+  "autoload": {
+    "psr-4": {
+      "MainMoney\\WordPressPlugin\\": "src/"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "MainMoney\\WordPressPlugin\\Tests\\": "tests/"
+    }
+  },
+  "scripts": {
+    "test": "phpunit",
+    "phpstan": "phpstan analyse"
+  },
+  "config": {
+    "sort-packages": true
   }
 }

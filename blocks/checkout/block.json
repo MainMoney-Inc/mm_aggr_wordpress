@@ -1,0 +1,27 @@
+{
+  "apiVersion": 3,
+  "name": "mm-aggr/checkout",
+  "title": "MainMoney Checkout",
+  "category": "widgets",
+  "icon": "money-alt",
+  "description": "MainMoney aggregator checkout wizard.",
+  "textdomain": "mm-aggr",
+  "attributes": {
+    "amount": {
+      "type": "string",
+      "default": ""
+    },
+    "currency": {
+      "type": "string",
+      "default": ""
+    },
+    "reference": {
+      "type": "string",
+      "default": ""
+    }
+  },
+  "supports": {
+    "html": false
+  },
+  "editorScript": "file:./editor.js"
+}
