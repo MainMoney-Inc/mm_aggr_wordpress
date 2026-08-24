@@ -40,6 +40,10 @@ Shortcode (omit `amount` for an open amount; set it to lock the total):
 Or insert the **MainMoney Checkout** block. The wizard talks only to this
 site’s REST proxy (`/wp-json/mm-aggr/v1/...`), which calls the PHP SDK.
 
+## Examples
+
+A local WordPress site with this plugin is in [examples/wordpress-site](examples/wordpress-site).
+
 ## License
 
 Copyright (c) 2026 MainMoney SARL. Licensed under the PolyForm Noncommercial
