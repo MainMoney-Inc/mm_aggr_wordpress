@@ -29,6 +29,43 @@ final class ProxyServiceTest extends TestCase
         self::assertStringContainsString('/manage/general/countries/', $mock->history[1]['uri']);
     }
 
+    public function testProvidersForwardsOperationType(): void
+    {
+        $mock = new MockHttpClient();
+        $client = ClientFactory::fromSettings($this->settings(), $mock);
+        $mock->enqueue($this->tokenResponse(), $this->envelope([
+            ['code' => 'ORANGE_CD', 'name' => 'Orange DRC'],
+        ]));
+        $session = CheckoutSession::create();
+        $result = (new ProxyService($client))->handle('GET', 'providers', [
+            'country' => 'CD',
+            'operation_type' => 'DEPOSIT',
+        ], [], $session);
+
+        self::assertSame(200, $result['status']);
+        self::assertStringContainsString('/manage/general/financial-entities/', $mock->history[1]['uri']);
+        self::assertStringContainsString('operation_type=DEPOSIT', $mock->history[1]['uri']);
+        self::assertStringContainsString('country=CD', $mock->history[1]['uri']);
+    }
+
+    public function testMatchProviderForwardsOperationType(): void
+    {
+        $mock = new MockHttpClient();
+        $client = ClientFactory::fromSettings($this->settings(), $mock);
+        $mock->enqueue($this->tokenResponse(), $this->envelope(['entity' => 'ORANGE_CD']));
+        $session = CheckoutSession::create();
+        $result = (new ProxyService($client))->handle('GET', 'match-provider', [
+            'account_number' => '243840000000',
+            'get_lookup' => 'true',
+            'operation_type' => 'DEPOSIT',
+        ], [], $session);
+
+        self::assertSame(200, $result['status']);
+        self::assertStringContainsString('/transactions/customers/match-provider/', $mock->history[1]['uri']);
+        self::assertStringContainsString('operation_type=DEPOSIT', $mock->history[1]['uri']);
+        self::assertStringContainsString('account_number=243840000000', $mock->history[1]['uri']);
+    }
+
     public function testLockedDepositOverwritesAmountAndReference(): void
     {
         $mock = new MockHttpClient();
@@ -70,6 +107,14 @@ final class ProxyServiceTest extends TestCase
         self::assertArrayNotHasKey('clientId', $config);
         self::assertSame('Bearer '.$session->token, $config['pollHeaders']['Authorization']);
         self::assertTrue($config['lockAmount']);
+    }
+
+    public function testCheckoutConfigPassesCurrencyLock(): void
+    {
+        $session = CheckoutSession::create(amount: '5.00', currency: 'USD', lockAmount: true, reference: 'WP-1');
+        $config = CheckoutConfig::forSession('https://shop.example/wp-json/mm-aggr/v1', 'https://shop.example/wp-json/mm-aggr/v1/status', $session);
+        self::assertSame('USD', $config['currency']);
+        self::assertTrue($config['lockCurrency']);
     }
 
     public function testSessionStoreExpires(): void

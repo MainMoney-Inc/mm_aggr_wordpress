@@ -21,16 +21,50 @@ final class Mm_Aggr_Admin
 
     public static function menu(): void
     {
-        add_options_page(
+        add_menu_page(
             __('MainMoney', 'mm-aggr'),
             __('MainMoney', 'mm-aggr'),
             'manage_options',
-            'mm-aggr',
-            [self::class, 'render'],
+            'mm-aggr-reports',
+            [Mm_Aggr_Admin_Reports::class, 'render'],
+            'dashicons-money-alt',
+            58,
+        );
+        add_submenu_page(
+            'mm-aggr-reports',
+            __('Reports', 'mm-aggr'),
+            __('Reports', 'mm-aggr'),
+            'manage_options',
+            'mm-aggr-reports',
+            [Mm_Aggr_Admin_Reports::class, 'render'],
+        );
+        add_submenu_page(
+            'mm-aggr-reports',
+            __('Transactions', 'mm-aggr'),
+            __('Transactions', 'mm-aggr'),
+            'manage_options',
+            'mm-aggr-transactions',
+            [Mm_Aggr_Admin_Transactions::class, 'render'],
+        );
+        add_submenu_page(
+            'mm-aggr-reports',
+            __('Wallets', 'mm-aggr'),
+            __('Wallets', 'mm-aggr'),
+            'manage_options',
+            'mm-aggr-wallets',
+            [Mm_Aggr_Admin_Wallets::class, 'render'],
+        );
+        add_submenu_page(
+            'mm-aggr-reports',
+            __('Settings', 'mm-aggr'),
+            __('Settings', 'mm-aggr'),
+            'manage_options',
+            'mm-aggr-settings',
+            [self::class, 'renderSettings'],
         );
     }
 
-    public static function render(): void
+    public static function renderSettings(): void
     {
         if (!current_user_can('manage_options')) {
             return;
@@ -38,8 +72,8 @@ final class Mm_Aggr_Admin
         $settings = Mm_Aggr_Options::load();
         $webhookUrl = rest_url('mm-aggr/v1/webhooks');
         ?>
-        <div class="wrap">
-            <h1><?php echo esc_html__('MainMoney', 'mm-aggr'); ?></h1>
+        <div class="wrap mm-aggr-admin">
+            <h1><?php echo esc_html__('MainMoney Settings', 'mm-aggr'); ?></h1>
             <p><?php echo esc_html__('Merchant API keys stay on the server. Do not put them in theme JavaScript.', 'mm-aggr'); ?></p>
             <form action="options.php" method="post">
                 <?php settings_fields('mm_aggr'); ?>

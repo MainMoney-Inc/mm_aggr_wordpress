@@ -22,6 +22,8 @@ cp .env.example .env
 ./scripts/serve.sh
 ```
 
+Changing `.env` credentials or `MM_BASE_URI` does not update a running site until you run `./scripts/seed.sh` again (or save Settings → MainMoney). The plugin reads the WordPress option, not `.env`.
+
 WordPress core is downloaded into `wordpress/` (gitignored).
 
 Open:

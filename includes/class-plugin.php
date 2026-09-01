@@ -22,12 +22,17 @@ final class Mm_Aggr_Plugin
         require_once MM_AGGR_DIR.'includes/class-options.php';
         require_once MM_AGGR_DIR.'includes/class-session-store.php';
         require_once MM_AGGR_DIR.'includes/class-admin.php';
+        require_once MM_AGGR_DIR.'includes/class-admin-transactions.php';
+        require_once MM_AGGR_DIR.'includes/class-admin-wallets.php';
+        require_once MM_AGGR_DIR.'includes/class-admin-reports.php';
+        require_once MM_AGGR_DIR.'includes/class-admin-assets.php';
         require_once MM_AGGR_DIR.'includes/class-rest.php';
         require_once MM_AGGR_DIR.'includes/class-assets.php';
         require_once MM_AGGR_DIR.'includes/class-shortcode.php';
         require_once MM_AGGR_DIR.'includes/class-block.php';
 
         Mm_Aggr_Admin::register();
+        Mm_Aggr_Admin_Assets::register();
         Mm_Aggr_Rest::register();
         Mm_Aggr_Shortcode::register();
         Mm_Aggr_Block::register();
@@ -44,7 +49,7 @@ final class Mm_Aggr_Plugin
             return;
         }
         echo '<div class="notice notice-warning"><p>';
-        echo esc_html__('MainMoney is installed but merchant credentials are missing. Open Settings → MainMoney.', 'mm-aggr');
+        echo esc_html__('MainMoney is installed but merchant credentials are missing. Open MainMoney → Settings.', 'mm-aggr');
         echo '</p></div>';
     }
 

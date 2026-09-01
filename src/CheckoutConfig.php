@@ -20,6 +20,8 @@ final class CheckoutConfig
             ],
             'locale' => $locale,
             'amount' => $session->amount,
+            'currency' => $session->currency,
+            'lockCurrency' => $session->currency !== null,
             'lockAmount' => $session->lockAmount,
             'reference' => $session->reference,
         ];

@@ -393,6 +393,21 @@
   }
 
   // ../../sdks/javascript/packages/checkout/src/checkout.ts
+  function providerAcceptedCurrencies(provider) {
+    if (provider.accepted_currencies !== void 0 && provider.accepted_currencies.length > 0) {
+      return [...provider.accepted_currencies];
+    }
+    return [provider.currency_code];
+  }
+  function unionProviderCurrencies(providers) {
+    const codes = /* @__PURE__ */ new Set();
+    for (const provider of providers) {
+      for (const code of providerAcceptedCurrencies(provider)) {
+        codes.add(code);
+      }
+    }
+    return [...codes].sort();
+  }
   function createCheckout(session, options) {
     const pollEnabled = options.pollStatus !== false;
     if (pollEnabled) {
@@ -408,6 +423,8 @@
     const theme = { ...session.theme, ...options.theme };
     const emitter = new Emitter();
     const pollAbort = new AbortController();
+    const explicitCurrency = options.currency?.trim() ?? "";
+    const lockCurrency = options.lockCurrency === true || explicitCurrency !== "";
     const state = {
       step: "country",
       operation: options.operation,
@@ -417,14 +434,30 @@
       customerName: null,
       amount: options.amount ?? "",
       lockAmount: options.lockAmount === true,
-      currency: "",
+      currency: explicitCurrency,
+      lockCurrency,
+      availableCurrencies: explicitCurrency !== "" ? [explicitCurrency] : [],
       partnerFee: null,
       theme
     };
+    let lastMatchedIdentifier = "";
     const notify = () => {
       emitter.emit("change", getState());
     };
     const getState = () => structuredClone(state);
+    const messageFromError = (error) => {
+      if (error instanceof Error && error.message !== "") {
+        return error.message;
+      }
+      return "Merchant backend request failed";
+    };
+    const fail = (error) => {
+      state.error = messageFromError(error);
+      notify();
+    };
+    const routingOperationType = () => {
+      return state.operation === "deposit" ? "DEPOSIT" : "PAYOUT";
+    };
     const paginated = (payload) => {
       if (Array.isArray(payload)) {
         return payload;
@@ -434,9 +467,27 @@
       }
       return [];
     };
+    const applyProviderCurrency = (provider) => {
+      if (state.lockCurrency) {
+        return;
+      }
+      const accepted = providerAcceptedCurrencies(provider);
+      state.availableCurrencies = accepted;
+      if (accepted.includes(provider.currency_code)) {
+        state.currency = provider.currency_code;
+      } else if (accepted.length > 0) {
+        state.currency = accepted[0];
+      }
+    };
     const loadCountries = async () => {
-      const payload = await http.get(session.paths.countries);
-      state.countries = paginated(payload);
+      try {
+        const payload = await http.get(session.paths.countries);
+        state.countries = paginated(payload);
+        state.error = void 0;
+      } catch (error) {
+        fail(error);
+        return;
+      }
       try {
         const prefs = await http.get(session.paths.checkoutPreferences);
         if (prefs.primary_color !== void 0) {
@@ -454,65 +505,116 @@
     const selectCountry = async (code) => {
       const country = state.countries.find((item) => item.code === code);
       if (country === void 0) {
-        throw new ConfigurationException("Unknown country");
+        fail(new ConfigurationException("Unknown country"));
+        return;
       }
-      state.selectedCountry = country;
-      state.selectedProvider = void 0;
-      state.highlightedProviderCode = void 0;
-      state.customerName = null;
-      const payload = await http.get(session.paths.providers, { country: code });
-      state.providers = paginated(payload);
-      state.step = "details";
-      notify();
+      try {
+        const payload = await http.get(session.paths.providers, {
+          country: code,
+          operation_type: routingOperationType()
+        });
+        state.selectedCountry = country;
+        state.selectedProvider = void 0;
+        state.highlightedProviderCode = void 0;
+        state.customerName = null;
+        lastMatchedIdentifier = "";
+        state.providers = paginated(payload);
+        if (!state.lockCurrency) {
+          state.availableCurrencies = unionProviderCurrencies(state.providers);
+          if (state.currency === "" && state.availableCurrencies.length > 0) {
+            state.currency = state.availableCurrencies[0];
+          }
+        }
+        state.error = void 0;
+        state.step = "details";
+        notify();
+      } catch (error) {
+        fail(error);
+      }
     };
     const selectProvider = async (code) => {
       const provider = state.providers.find((item) => item.code === code);
       if (provider === void 0) {
-        throw new ConfigurationException("Unknown provider");
+        fail(new ConfigurationException("Unknown provider"));
+        return;
       }
-      state.selectedProvider = provider;
-      state.currency = provider.currency_code;
-      await refreshLimitsAndFees();
-      notify();
+      try {
+        state.selectedProvider = provider;
+        applyProviderCurrency(provider);
+        await refreshLimitsAndFees();
+        notify();
+      } catch (error) {
+        fail(error);
+      }
     };
     const setIdentifier = (value) => {
       state.identifier = value;
-      notify();
     };
     const matchProvider = async () => {
-      if (state.identifier.trim() === "") {
+      const trimmed = state.identifier.trim();
+      if (trimmed === "") {
         return;
       }
-      const payload = await http.get(session.paths.matchProvider, {
-        account_number: e164OrIdentifier(),
-        get_lookup: true
-      });
-      const entity = typeof payload.entity === "string" ? payload.entity : void 0;
-      if (entity !== void 0) {
-        state.highlightedProviderCode = entity;
-        const matched = state.providers.find((item) => item.code === entity);
-        if (matched !== void 0) {
-          state.selectedProvider = matched;
-          state.currency = matched.currency_code;
-        }
+      if (trimmed === lastMatchedIdentifier) {
+        return;
       }
-      state.customerName = extractCustomerName(payload);
-      await refreshLimitsAndFees();
-      notify();
+      try {
+        const payload = await http.get(session.paths.matchProvider, {
+          account_number: e164OrIdentifier(),
+          get_lookup: true,
+          operation_type: routingOperationType()
+        });
+        const entity = typeof payload.entity === "string" ? payload.entity : void 0;
+        if (entity !== void 0) {
+          state.highlightedProviderCode = entity;
+          const matched = state.providers.find((item) => item.code === entity);
+          if (matched !== void 0) {
+            state.selectedProvider = matched;
+            applyProviderCurrency(matched);
+          }
+        }
+        state.customerName = extractCustomerName(payload);
+        lastMatchedIdentifier = trimmed;
+        await refreshLimitsAndFees();
+        notify();
+      } catch (error) {
+        fail(error);
+      }
+    };
+    const setCurrency = async (code) => {
+      if (state.lockCurrency) {
+        return;
+      }
+      const normalized = code.trim().toUpperCase();
+      if (normalized === "" || !state.availableCurrencies.includes(normalized)) {
+        fail(new ConfigurationException("Unknown currency"));
+        return;
+      }
+      try {
+        state.currency = normalized;
+        await refreshLimitsAndFees();
+        notify();
+      } catch (error) {
+        fail(error);
+      }
     };
     const setAmount = async (amount) => {
       if (state.lockAmount) {
         return;
       }
-      state.amount = amount;
-      await refreshLimitsAndFees();
-      notify();
+      try {
+        state.amount = amount;
+        await refreshLimitsAndFees();
+        notify();
+      } catch (error) {
+        fail(error);
+      }
     };
     const refreshLimitsAndFees = async () => {
       if (state.selectedProvider === void 0 || state.amount.trim() === "" || state.currency === "") {
         return;
       }
-      const operation = state.operation === "deposit" ? "DEPOSIT" : "PAYOUT";
+      const operation = routingOperationType();
       const limitsPayload = await http.get(session.paths.amountLimits, {
         financial_entity_code: state.selectedProvider.code,
         currency: state.currency,
@@ -546,29 +648,34 @@
         notify();
         return;
       }
-      if (state.identifier.trim() === "" || state.amount.trim() === "") {
+      if (state.identifier.trim() === "" || state.amount.trim() === "" || state.currency === "") {
         state.error = t("required");
         notify();
         return;
       }
-      if (options.onPartnerFee !== void 0) {
-        const fee = await options.onPartnerFee(getState());
-        if (fee !== null && fee.currency !== state.currency) {
-          throw new CurrencyMismatchException();
+      try {
+        if (options.onPartnerFee !== void 0) {
+          const fee = await options.onPartnerFee(getState());
+          if (fee !== null && fee.currency !== state.currency) {
+            fail(new CurrencyMismatchException());
+            return;
+          }
+          state.partnerFee = fee;
         }
-        state.partnerFee = fee;
-      }
-      if (state.operation === "payout" && options.onValidateBalance !== void 0) {
-        const result = await options.onValidateBalance(getState());
-        if (!result.ok) {
-          state.error = result.message ?? t("balanceRejected");
-          notify();
-          return;
+        if (state.operation === "payout" && options.onValidateBalance !== void 0) {
+          const result = await options.onValidateBalance(getState());
+          if (!result.ok) {
+            state.error = result.message ?? t("balanceRejected");
+            notify();
+            return;
+          }
         }
+        state.error = void 0;
+        state.step = "overview";
+        notify();
+      } catch (error) {
+        fail(error);
       }
-      state.error = void 0;
-      state.step = "overview";
-      notify();
     };
     const goBack = () => {
       if (state.step === "overview") {
@@ -580,66 +687,73 @@
     };
     const confirm = async () => {
       if (state.selectedProvider === void 0) {
-        throw new ConfigurationException("Provider is required");
+        fail(new ConfigurationException("Provider is required"));
+        return;
       }
       state.step = "confirming";
+      state.error = void 0;
       notify();
-      const reference = options.reference ?? crypto.randomUUID();
-      const createAmount = depositAmount();
-      let created;
-      if (state.operation === "deposit") {
-        const payload = {
-          provider_code: state.selectedProvider.code,
-          reference,
-          amount: createAmount,
-          currency: state.currency,
-          customer_phone: e164OrIdentifier()
-        };
-        if (state.customerName !== null) {
-          payload.customer_name = state.customerName;
+      try {
+        const reference = options.reference ?? crypto.randomUUID();
+        const createAmount = depositAmount();
+        let created;
+        if (state.operation === "deposit") {
+          const payload = {
+            provider_code: state.selectedProvider.code,
+            reference,
+            amount: createAmount,
+            currency: state.currency,
+            customer_phone: e164OrIdentifier()
+          };
+          if (state.customerName !== null) {
+            payload.customer_name = state.customerName;
+          }
+          created = await http.post(session.paths.deposits, payload, {
+            "Idempotency-Key": reference
+          });
+        } else {
+          created = await http.post(session.paths.payouts, {
+            provider_code: state.selectedProvider.code,
+            reference,
+            amount: state.amount,
+            currency: state.currency,
+            destination_account: e164OrIdentifier()
+          }, { "Idempotency-Key": reference });
         }
-        created = await http.post(session.paths.deposits, payload, {
-          "Idempotency-Key": reference
-        });
-      } else {
-        created = await http.post(session.paths.payouts, {
-          provider_code: state.selectedProvider.code,
+        state.status = created;
+        if (typeof created.status === "string" && isTerminalStatus(created.status)) {
+          state.step = "terminal";
+          notify();
+          emitter.emit("complete", getState());
+          return;
+        }
+        if (!pollEnabled) {
+          state.step = "ongoing";
+          notify();
+          emitter.emit("ongoing", getState());
+          return;
+        }
+        state.step = "polling";
+        notify();
+        const status = await pollStatus({
+          pollUrl: options.pollUrl ?? "",
+          pollHeaders: options.pollHeaders ?? {},
+          fetchImpl: session.fetch,
           reference,
-          amount: state.amount,
-          currency: state.currency,
-          destination_account: e164OrIdentifier()
-        }, { "Idempotency-Key": reference });
-      }
-      state.status = created;
-      if (typeof created.status === "string" && isTerminalStatus(created.status)) {
+          operation: state.operation,
+          intervalMs: options.pollIntervalMs ?? 2e3,
+          signal: pollAbort.signal
+        });
+        state.status = status;
         state.step = "terminal";
         notify();
         emitter.emit("complete", getState());
-        return;
-      }
-      if (!pollEnabled) {
-        state.step = "ongoing";
-        notify();
-        emitter.emit("ongoing", getState());
-        return;
-      }
-      state.step = "polling";
-      notify();
-      const status = await pollStatus({
-        pollUrl: options.pollUrl ?? "",
-        pollHeaders: options.pollHeaders ?? {},
-        fetchImpl: session.fetch,
-        reference,
-        operation: state.operation,
-        intervalMs: options.pollIntervalMs ?? 2e3,
-        signal: pollAbort.signal
-      });
-      state.status = status;
-      state.step = "terminal";
-      notify();
-      emitter.emit("complete", getState());
-      if (typeof status.status === "string") {
-        emitter.emit("status", status);
+        if (typeof status.status === "string") {
+          emitter.emit("status", status);
+        }
+      } catch (error) {
+        state.step = "overview";
+        fail(error);
       }
     };
     const depositAmount = () => {
@@ -671,6 +785,7 @@
       selectProvider,
       setIdentifier,
       matchProvider,
+      setCurrency,
       setAmount,
       goOverview,
       goBack,
@@ -701,6 +816,7 @@
         const status = state.status?.status ?? "";
         element.append(messageStep(status.toUpperCase() === "SUCCESS" ? checkout.t("success") : checkout.t("failed")));
       }
+      appendError(element, state);
     };
     render(checkout.getState());
     return checkout.subscribe(render);
@@ -725,7 +841,7 @@
     }
     select.addEventListener("change", () => {
       if (select.value !== "") {
-        void checkout.selectCountry(select.value);
+        run(() => checkout.selectCountry(select.value));
       }
     });
     wrap.append(select);
@@ -740,13 +856,7 @@
       wrap.append(overviewRow(checkout.t("customerName"), state.customerName));
     }
     wrap.append(amountField(checkout, state));
-    if (state.error !== void 0) {
-      const error = document.createElement("div");
-      error.className = "mm-error";
-      error.textContent = state.error;
-      wrap.append(error);
-    }
-    wrap.append(actions(checkout, () => void checkout.goOverview(), checkout.t("next"), true));
+    wrap.append(actions(checkout, () => run(() => checkout.goOverview()), checkout.t("next"), true));
     return wrap;
   }
   function overviewStep(checkout, state) {
@@ -768,7 +878,7 @@
         overviewRow(state.partnerFee.label ?? checkout.t("partnerFee"), `${state.partnerFee.amount} ${state.partnerFee.currency}`)
       );
     }
-    wrap.append(actions(checkout, () => void checkout.confirm(), checkout.t("confirm"), true));
+    wrap.append(actions(checkout, () => run(() => checkout.confirm()), checkout.t("confirm"), true));
     return wrap;
   }
   function confirmingStep(checkout, state, logoUrl) {
@@ -817,7 +927,7 @@
         row.append(badge);
       }
       row.addEventListener("click", () => {
-        void checkout.selectProvider(provider.code);
+        run(() => checkout.selectProvider(provider.code));
       });
       wrap.append(row);
     }
@@ -832,7 +942,7 @@
     input.value = state.identifier;
     input.addEventListener("input", () => checkout.setIdentifier(input.value));
     input.addEventListener("blur", () => {
-      void checkout.matchProvider();
+      run(() => checkout.matchProvider());
     });
     if (phone && state.selectedCountry?.phone_code) {
       const row = document.createElement("div");
@@ -851,6 +961,8 @@
     const field = document.createElement("div");
     field.className = "mm-field";
     field.append(label(checkout.t("amount")));
+    const row = document.createElement("div");
+    row.className = "mm-amount-row";
     const input = document.createElement("input");
     input.className = "mm-input";
     input.value = state.amount;
@@ -860,11 +972,38 @@
       input.readOnly = true;
     } else {
       input.addEventListener("change", () => {
-        void checkout.setAmount(input.value);
+        run(() => checkout.setAmount(input.value));
       });
     }
-    field.append(input);
+    row.append(input);
+    row.append(currencySuffix(checkout, state));
+    field.append(row);
     return field;
+  }
+  function currencySuffix(checkout, state) {
+    if (state.lockCurrency) {
+      const badge = document.createElement("div");
+      badge.className = "mm-currency-suffix";
+      badge.textContent = state.currency;
+      return badge;
+    }
+    const select = document.createElement("select");
+    select.className = "mm-currency-suffix mm-select";
+    for (const code of state.availableCurrencies) {
+      const option = document.createElement("option");
+      option.value = code;
+      option.textContent = code;
+      if (state.currency === code) {
+        option.selected = true;
+      }
+      select.append(option);
+    }
+    select.addEventListener("change", () => {
+      if (select.value !== "") {
+        run(() => checkout.setCurrency(select.value));
+      }
+    });
+    return select;
   }
   function overviewRow(labelText, value) {
     const row = document.createElement("div");
@@ -901,28 +1040,63 @@
     node.textContent = text;
     return node;
   }
+  function appendError(parent, state) {
+    if (state.error === void 0 || state.error === "") {
+      return;
+    }
+    const error = document.createElement("div");
+    error.className = "mm-error";
+    error.textContent = state.error;
+    parent.append(error);
+  }
+  function run(op) {
+    void op().catch(() => void 0);
+  }
 
   // assets/js/bootstrap.ts
+  function showBootError(root, error) {
+    root.classList.add("mm-checkout");
+    const message = error instanceof Error && error.message !== "" ? error.message : "Checkout failed to load.";
+    const existing = root.querySelector(".mm-error");
+    if (existing !== null) {
+      existing.textContent = message;
+      return;
+    }
+    const node = document.createElement("div");
+    node.className = "mm-error";
+    node.textContent = message;
+    root.append(node);
+  }
   async function mountOne(cfg) {
     const root = document.getElementById(cfg.targetId ?? "mm-aggr-checkout");
     if (root === null) {
       return;
     }
-    const session = createSession({
-      merchantBackendUrl: cfg.merchantBackendUrl,
-      clientToken: cfg.clientToken,
-      locale: cfg.locale ?? "en"
-    });
-    const checkout = createCheckout(session, {
-      operation: "deposit",
-      pollUrl: cfg.pollUrl,
-      pollHeaders: cfg.pollHeaders,
-      amount: cfg.amount ?? void 0,
-      lockAmount: cfg.lockAmount === true,
-      reference: cfg.reference
-    });
-    await checkout.loadCountries();
-    mountCheckout(root, checkout, cfg.logoUrl !== void 0 ? { logoUrl: cfg.logoUrl } : {});
+    try {
+      const session = createSession({
+        merchantBackendUrl: cfg.merchantBackendUrl,
+        clientToken: cfg.clientToken,
+        locale: cfg.locale ?? "en"
+      });
+      const checkout = createCheckout(session, {
+        operation: "deposit",
+        pollUrl: cfg.pollUrl,
+        pollHeaders: cfg.pollHeaders,
+        amount: cfg.amount ?? void 0,
+        currency: cfg.currency ?? void 0,
+        lockCurrency: cfg.lockCurrency === true,
+        lockAmount: cfg.lockAmount === true,
+        reference: cfg.reference
+      });
+      mountCheckout(root, checkout, cfg.logoUrl !== void 0 ? { logoUrl: cfg.logoUrl } : {});
+      try {
+        await checkout.loadCountries();
+      } catch (error) {
+        showBootError(root, error);
+      }
+    } catch (error) {
+      showBootError(root, error);
+    }
   }
   function boot() {
     const configs = window.mmAggrCheckouts ?? [];
