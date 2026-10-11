@@ -44,8 +44,8 @@ final class ProxyServiceTest extends TestCase
 
         self::assertSame(200, $result['status']);
         self::assertStringContainsString('/manage/general/financial-entities/', $mock->history[1]['uri']);
-        self::assertStringContainsString('operation_type=DEPOSIT', $mock->history[1]['uri']);
-        self::assertStringContainsString('country=CD', $mock->history[1]['uri']);
+        self::assertSame('DEPOSIT', $mock->history[1]['options']['query']['operation_type'] ?? null);
+        self::assertSame('CD', $mock->history[1]['options']['query']['country'] ?? null);
     }
 
     public function testMatchProviderForwardsOperationType(): void
@@ -62,8 +62,8 @@ final class ProxyServiceTest extends TestCase
 
         self::assertSame(200, $result['status']);
         self::assertStringContainsString('/transactions/customers/match-provider/', $mock->history[1]['uri']);
-        self::assertStringContainsString('operation_type=DEPOSIT', $mock->history[1]['uri']);
-        self::assertStringContainsString('account_number=243840000000', $mock->history[1]['uri']);
+        self::assertSame('DEPOSIT', $mock->history[1]['options']['query']['operation_type'] ?? null);
+        self::assertSame('243840000000', $mock->history[1]['options']['query']['account_number'] ?? null);
     }
 
     public function testLockedDepositOverwritesAmountAndReference(): void

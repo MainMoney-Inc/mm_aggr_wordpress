@@ -10,6 +10,8 @@ use MainMoney\Aggregator\Client;
 final class AdminApiHelper
 {
     /**
+     * @param array<mixed> $payload
+     *
      * @return array{count: int, results: list<array<string, mixed>>}
      */
     public static function normalizeList(array $payload): array

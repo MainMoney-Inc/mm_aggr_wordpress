@@ -2,3 +2,7 @@ parameters:
   level: 8
   paths:
     - src
+  ignoreErrors:
+    - message: '#unknown class Mm_Aggr_Options#'
+      identifier: class.notFound
+      path: src/AdminApiHelper.php
