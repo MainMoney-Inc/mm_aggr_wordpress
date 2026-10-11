@@ -1,5 +1,7 @@
 # MainMoney for WordPress
 
+[![Packagist](https://img.shields.io/packagist/v/mainmoney/mm-aggr-wordpress)](https://packagist.org/packages/mainmoney/mm-aggr-wordpress) [![License: GPL v2+](https://img.shields.io/badge/license-GPL--2.0--or--later-blue.svg)](LICENSE)
+
 Accept MainMoney aggregator payments on WordPress. This plugin uses the
 official [PHP SDK](https://github.com/MainMoney-Inc/mm_aggr_php_sdk) on the
 server and the [JS/TS frontend SDK](https://github.com/MainMoney-Inc/mm_aggr_js_sdk)
@@ -16,11 +18,11 @@ For WooCommerce checkouts, install [MainMoney for WooCommerce](https://github.co
 
 ## Install
 
-1. Copy this plugin into `wp-content/plugins/mm-aggr-wordpress` (or install the zip).
-2. From the plugin directory run `composer install`. Until Packagist lists the
-   PHP SDK, Composer loads it from the sibling `contrib/sdks/php` checkout (or
-   clone [mm_aggr_php_sdk](https://github.com/MainMoney-Inc/mm_aggr_php_sdk) next
-   to this repo at `../../sdks/php`).
+1. Install the plugin, either:
+   - with Composer: `composer require mainmoney/mm-aggr-wordpress` (for Composer-managed sites such as Bedrock, which install `wordpress-plugin` packages into `wp-content/plugins`), or
+   - from the zip attached to each [GitHub release](https://github.com/MainMoney-Inc/mm_aggr_wordpress/releases) (upload via Plugins → Add New → Upload; dependencies are bundled).
+2. When working from a git checkout, run `composer install` in the plugin directory; the PHP SDK
+   ([`mainmoney/mm-aggr-php-sdk`](https://packagist.org/packages/mainmoney/mm-aggr-php-sdk)) comes from Packagist.
 3. Activate **MainMoney** in WP Admin → Plugins.
 4. Settings → MainMoney: Client ID, API secret, Test mode, webhook secret.
    Leave Base URI empty unless you override the SDK hosts.
