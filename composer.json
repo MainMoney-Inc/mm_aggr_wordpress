@@ -2,7 +2,7 @@
   "name": "mainmoney/mm-aggr-wordpress",
   "description": "WordPress plugin for MainMoney aggregator payments",
   "type": "wordpress-plugin",
-  "license": "SEE LICENSE IN LICENSE",
+  "license": "GPL-2.0-or-later",
   "minimum-stability": "dev",
   "prefer-stable": true,
   "repositories": [
