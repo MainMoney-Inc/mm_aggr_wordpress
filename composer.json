@@ -3,6 +3,22 @@
   "description": "WordPress plugin for MainMoney aggregator payments",
   "type": "wordpress-plugin",
   "license": "GPL-2.0-or-later",
+  "homepage": "https://github.com/MainMoney-Inc/mm_aggr_wordpress",
+  "authors": [
+    {
+      "name": "MainMoney SARL"
+    }
+  ],
+  "keywords": [
+    "mainmoney",
+    "payments",
+    "wordpress",
+    "wordpress-plugin"
+  ],
+  "support": {
+    "issues": "https://github.com/MainMoney-Inc/mm_aggr_wordpress/issues",
+    "source": "https://github.com/MainMoney-Inc/mm_aggr_wordpress"
+  },
   "minimum-stability": "dev",
   "prefer-stable": true,
   "repositories": [
