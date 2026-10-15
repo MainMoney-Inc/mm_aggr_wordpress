@@ -2,7 +2,7 @@
 /**
  * Plugin Name: MainMoney
  * Description: MainMoney aggregator payments for WordPress.
- * Version: 0.1.0
+ * Version: 0.1.1
  * Requires at least: 6.7
  * Requires PHP: 8.2
  * Author: MainMoney SARL
@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('MM_AGGR_VERSION', '0.1.0');
+define('MM_AGGR_VERSION', '0.1.1');
 define('MM_AGGR_FILE', __FILE__);
 define('MM_AGGR_DIR', plugin_dir_path(__FILE__));
 define('MM_AGGR_URL', plugin_dir_url(__FILE__));
