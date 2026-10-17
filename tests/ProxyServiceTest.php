@@ -8,7 +8,9 @@ use MainMoney\Aggregator\Http\HttpResponse;
 use MainMoney\WordPressPlugin\CheckoutConfig;
 use MainMoney\WordPressPlugin\CheckoutSession;
 use MainMoney\WordPressPlugin\ClientFactory;
+use MainMoney\WordPressPlugin\InMemoryCacheStore;
 use MainMoney\WordPressPlugin\InMemoryCheckoutSessionStore;
+use MainMoney\WordPressPlugin\ProxyCache;
 use MainMoney\WordPressPlugin\ProxyService;
 use MainMoney\WordPressPlugin\Settings;
 use MainMoney\WordPressPlugin\WebhookService;
@@ -87,7 +89,7 @@ final class ProxyServiceTest extends TestCase
         $json = $mock->history[1]['options']['json'] ?? [];
         self::assertSame('25.00', $json['amount']);
         self::assertSame('WP-LOCKED', $json['reference']);
-        self::assertSame('WP-LOCKED', $mock->history[1]['options']['headers']['Idempotency-Key'] ?? null);
+        self::assertSame(ProxyService::idempotencyKey($session), $mock->history[1]['options']['headers']['Idempotency-Key'] ?? null);
     }
 
     public function testUnknownPathReturns400(): void
@@ -115,6 +117,59 @@ final class ProxyServiceTest extends TestCase
         $config = CheckoutConfig::forSession('https://shop.example/wp-json/mm-aggr/v1', 'https://shop.example/wp-json/mm-aggr/v1/status', $session);
         self::assertSame('USD', $config['currency']);
         self::assertTrue($config['lockCurrency']);
+    }
+
+    public function testIdempotencyKeyFollowsSessionAndRetryAttempt(): void
+    {
+        $session = new CheckoutSession('tok-a', 'WP-1', '10.00', 'USD', true, time() + 60);
+        $other = new CheckoutSession('tok-b', 'WP-1', '10.00', 'USD', true, time() + 60);
+        self::assertNotSame(ProxyService::idempotencyKey($session), ProxyService::idempotencyKey($other));
+        self::assertSame(ProxyService::idempotencyKey($session).'-r2', ProxyService::idempotencyKey($session, 2));
+
+        $mock = new MockHttpClient();
+        $client = ClientFactory::fromSettings($this->settings(), $mock);
+        $mock->enqueue($this->tokenResponse(), $this->envelope(['status' => 'PENDING']), $this->envelope(['status' => 'PENDING']));
+        $service = new ProxyService($client);
+        $service->handle('POST', 'deposits', [], ['reference' => 'WP-1', 'customer_phone' => '1'], $session);
+        $service->handle('POST', 'deposits', [], ['reference' => 'WP-1-r1', 'customer_phone' => '2'], $session);
+        self::assertSame(ProxyService::idempotencyKey($session), $mock->history[1]['options']['headers']['Idempotency-Key'] ?? null);
+        self::assertSame('WP-1', $mock->history[1]['options']['json']['reference'] ?? null);
+        self::assertSame(ProxyService::idempotencyKey($session, 1), $mock->history[2]['options']['headers']['Idempotency-Key'] ?? null);
+        self::assertSame('WP-1-r1', $mock->history[2]['options']['json']['reference'] ?? null);
+    }
+
+    public function testBrowserCannotChooseAnotherReference(): void
+    {
+        $session = new CheckoutSession('tok', 'WP-1', '10.00', 'USD', true, time() + 60);
+        $mock = new MockHttpClient();
+        $client = ClientFactory::fromSettings($this->settings(), $mock);
+        $mock->enqueue($this->tokenResponse(), $this->envelope(['status' => 'PENDING']));
+        (new ProxyService($client))->handle('POST', 'deposits', [], ['reference' => 'OTHER-1', 'currency' => 'CDF'], $session);
+        self::assertSame('WP-1', $mock->history[1]['options']['json']['reference'] ?? null);
+        self::assertSame('USD', $mock->history[1]['options']['json']['currency'] ?? null);
+    }
+
+    public function testStaticLookupsAreCachedUntilTheVersionChanges(): void
+    {
+        $store = new InMemoryCacheStore();
+        $mock = new MockHttpClient();
+        $client = ClientFactory::fromSettings($this->settings(), $mock);
+        $mock->enqueue($this->tokenResponse(), $this->envelope([['code' => 'CD']]), $this->envelope([['code' => 'KE']]));
+        $session = CheckoutSession::create();
+        $scope = $this->settings()->cacheScope();
+        $proxy = new ProxyService($client, new ProxyCache($store, $scope, 1));
+        $proxy->handle('GET', 'countries', [], [], $session);
+        $proxy->handle('GET', 'countries', [], [], $session);
+        self::assertCount(2, $mock->history);
+        $bumped = (new ProxyService($client, new ProxyCache($store, $scope, 2)))->handle('GET', 'countries', [], [], $session);
+        self::assertSame([['code' => 'KE']], $bumped['body']);
+    }
+
+    public function testCheckoutConfigCarriesReceiptEmail(): void
+    {
+        $session = CheckoutSession::create(amount: '5.00', lockAmount: true);
+        $config = CheckoutConfig::forSession('https://s/rest', 'https://s/status', $session, 'en', 'buyer@example.com');
+        self::assertSame('buyer@example.com', $config['customerEmail']);
     }
 
     public function testSessionStoreExpires(): void

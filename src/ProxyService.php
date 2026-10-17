@@ -10,7 +10,7 @@ use MainMoney\Aggregator\Exception\AggregatorException;
 
 final class ProxyService
 {
-    public function __construct(private readonly Client $client)
+    public function __construct(private readonly Client $client, private readonly ?ProxyCache $cache = null)
     {
     }
 
@@ -53,30 +53,30 @@ final class ProxyService
     private function dispatch(string $method, string $route, array $query, array $body, CheckoutSession $session): array
     {
         if ($method === 'GET' && $route === 'countries') {
-            return $this->asArray($this->client->countries->list());
+            return $this->cached($route, $query, fn (): array => $this->asArray($this->client->countries->list()));
         }
         if ($method === 'GET' && $route === 'providers') {
-            return $this->asArray($this->client->providers->list($this->scalarQuery($query)));
+            return $this->cached($route, $query, fn (): array => $this->asArray($this->client->providers->list($this->scalarQuery($query))));
         }
         if ($method === 'GET' && $route === 'match-provider') {
             $account = $this->stringQuery($query, 'account_number');
             $lookup = $this->boolQuery($query, 'get_lookup');
             $operationType = $this->stringQuery($query, 'operation_type');
 
-            return $this->asArray($this->client->customers->matchProvider(
+            return $this->cached($route, $query, fn (): array => $this->asArray($this->client->customers->matchProvider(
                 $account,
                 $lookup,
                 $operationType !== '' ? $operationType : null,
-            ));
+            )));
         }
         if ($method === 'GET' && $route === 'amount-limits') {
-            return $this->asArray($this->client->amountLimits->list($this->scalarQuery($query)));
+            return $this->cached($route, $query, fn (): array => $this->asArray($this->client->amountLimits->list($this->scalarQuery($query))));
         }
         if ($method === 'POST' && $route === 'fees/simulate') {
-            return $this->asArray($this->client->fees->simulate($this->withoutBrowserFeeFields($body)));
+            return $this->asArray($this->client->fees->simulate($this->pinnedCurrency($this->withoutBrowserFeeFields($body), $session)));
         }
         if ($method === 'GET' && $route === 'checkout-preferences') {
-            return $this->asArray($this->client->checkoutPreferences->get());
+            return $this->cached($route, $query, fn (): array => $this->asArray($this->client->checkoutPreferences->get()));
         }
         if ($method === 'POST' && $route === 'deposits') {
             return $this->asArray($this->createDeposit($body, $session));
@@ -98,6 +98,22 @@ final class ProxyService
     }
 
     /**
+     * @param array<string, mixed> $query
+     * @param callable(): (array<string, mixed>|list<mixed>) $loader
+     *
+     * @return array<string, mixed>|list<mixed>
+     */
+    private function cached(string $route, array $query, callable $loader): array
+    {
+        if ($this->cache === null) {
+            return $loader();
+        }
+        $payload = $this->cache->remember($route, $query, $loader);
+
+        return is_array($payload) ? $payload : $loader();
+    }
+
+    /**
      * @param array<string, mixed> $body
      *
      * @return array<string, mixed>|list<mixed>
@@ -108,9 +124,54 @@ final class ProxyService
         if ($session->lockAmount && $session->amount !== null) {
             $body['amount'] = $session->amount;
         }
-        $body['reference'] = $session->reference;
+        if ($session->currency !== null) {
+            // The session's currency is the amount's: the browser may only choose how the customer pays (payment_currency).
+            $body['currency'] = $session->currency;
+        }
+        $retry = $this->retryNumber($body['reference'] ?? null, $session);
+        $body['reference'] = $retry > 0 ? $session->reference.'-r'.$retry : $session->reference;
 
-        return $this->client->deposits->create($body, $session->reference);
+        return $this->client->deposits->create($body, self::idempotencyKey($session, $retry));
+    }
+
+    /**
+     * One key per checkout session (a page load) and per retry attempt: the same body replays the first
+     * answer, while a retry with another phone number gets a new key and a new reference.
+     */
+    public static function idempotencyKey(CheckoutSession $session, int $retry = 0): string
+    {
+        return 'mm-'.substr(hash('sha256', $session->token), 0, 32).($retry > 0 ? '-r'.$retry : '');
+    }
+
+    /**
+     * The widget retries a failed deposit as `<reference>-r<N>`; anything else is ignored.
+     */
+    private function retryNumber(mixed $browserReference, CheckoutSession $session): int
+    {
+        if (!is_string($browserReference)) {
+            return 0;
+        }
+        $prefix = $session->reference.'-r';
+        if (!str_starts_with($browserReference, $prefix)) {
+            return 0;
+        }
+        $suffix = substr($browserReference, strlen($prefix));
+
+        return preg_match('/^[1-9]\d{0,2}$/', $suffix) === 1 ? (int) $suffix : 0;
+    }
+
+    /**
+     * @param array<string, mixed> $body
+     *
+     * @return array<string, mixed>
+     */
+    private function pinnedCurrency(array $body, CheckoutSession $session): array
+    {
+        if ($session->currency !== null) {
+            $body['currency'] = $session->currency;
+        }
+
+        return $body;
     }
 
     /**

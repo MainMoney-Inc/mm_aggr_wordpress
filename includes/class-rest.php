@@ -5,6 +5,7 @@ declare(strict_types=1);
 use MainMoney\Aggregator\Exception\AggregatorException;
 use MainMoney\WordPressPlugin\CheckoutSession;
 use MainMoney\WordPressPlugin\ClientFactory;
+use MainMoney\WordPressPlugin\ProxyCache;
 use MainMoney\WordPressPlugin\ProxyService;
 use MainMoney\WordPressPlugin\WebhookService;
 
@@ -64,7 +65,8 @@ final class Mm_Aggr_Rest
             return new \WP_Error('mm_aggr_unconfigured', 'MainMoney is not configured', ['status' => 503]);
         }
         $route = trim(str_replace('/mm-aggr/v1/', '', $request->get_route()), '/');
-        $service = new ProxyService(ClientFactory::fromSettings($settings));
+        $cache = new ProxyCache(new Mm_Aggr_Cache_Store(), $settings->cacheScope(), Mm_Aggr_Cache_Store::version());
+        $service = new ProxyService(ClientFactory::fromSettings($settings), $cache);
         $result = $service->handle(
             $request->get_method(),
             $route,

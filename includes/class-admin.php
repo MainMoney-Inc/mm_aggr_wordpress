@@ -8,6 +8,18 @@ final class Mm_Aggr_Admin
     {
         add_action('admin_init', [self::class, 'settings']);
         add_action('admin_menu', [self::class, 'menu']);
+        add_action('admin_post_mm_aggr_clear_cache', [self::class, 'clearCache']);
+    }
+
+    public static function clearCache(): void
+    {
+        if (!current_user_can('manage_options')) {
+            wp_die(esc_html__('You do not have permission to do this.', 'mm-aggr'), 403);
+        }
+        check_admin_referer('mm_aggr_clear_cache');
+        Mm_Aggr_Cache_Store::flush();
+        wp_safe_redirect(admin_url('admin.php?page=mm-aggr-settings&mm_cache_cleared=1'));
+        exit;
     }
 
     public static function settings(): void
@@ -114,6 +126,15 @@ final class Mm_Aggr_Admin
                     </tr>
                 </table>
                 <?php submit_button(); ?>
+            </form>
+            <?php if (isset($_GET['mm_cache_cleared'])) : // phpcs:ignore WordPress.Security.NonceVerification ?>
+                <div class="notice notice-success"><p><?php echo esc_html__('MainMoney cache cleared.', 'mm-aggr'); ?></p></div>
+            <?php endif; ?>
+            <form action="<?php echo esc_url(admin_url('admin-post.php')); ?>" method="post">
+                <input type="hidden" name="action" value="mm_aggr_clear_cache" />
+                <?php wp_nonce_field('mm_aggr_clear_cache'); ?>
+                <?php submit_button(__('Clear cache', 'mm-aggr'), 'secondary', 'submit', false); ?>
+                <p class="description"><?php echo esc_html__('Countries, providers and checkout preferences are cached for up to 24 hours and refreshed when settings are saved.', 'mm-aggr'); ?></p>
             </form>
         </div>
         <?php

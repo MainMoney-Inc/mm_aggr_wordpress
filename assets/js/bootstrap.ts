@@ -12,6 +12,7 @@ type CheckoutBootConfig = {
   lockAmount?: boolean;
   lockCurrency?: boolean;
   reference?: string;
+  customerEmail?: string | null;
   targetId?: string;
   logoUrl?: string;
 };
@@ -56,6 +57,7 @@ async function mountOne(cfg: CheckoutBootConfig): Promise<void> {
       lockCurrency: cfg.lockCurrency === true,
       lockAmount: cfg.lockAmount === true,
       reference: cfg.reference,
+      customerEmail: cfg.customerEmail ?? undefined,
     });
     mountCheckout(root, checkout, cfg.logoUrl !== undefined ? { logoUrl: cfg.logoUrl } : {});
     try {

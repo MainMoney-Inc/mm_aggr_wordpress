@@ -21,6 +21,7 @@ final class Mm_Aggr_Plugin
     {
         require_once MM_AGGR_DIR.'includes/class-options.php';
         require_once MM_AGGR_DIR.'includes/class-session-store.php';
+        require_once MM_AGGR_DIR.'includes/class-cache-store.php';
         require_once MM_AGGR_DIR.'includes/class-admin.php';
         require_once MM_AGGR_DIR.'includes/class-admin-transactions.php';
         require_once MM_AGGR_DIR.'includes/class-admin-wallets.php';
@@ -38,6 +39,8 @@ final class Mm_Aggr_Plugin
         Mm_Aggr_Block::register();
 
         add_action('admin_notices', [$this, 'maybeNotice']);
+        // Credentials or mode changed: the cached countries/providers belong to the old account.
+        add_action('update_option_'.Mm_Aggr_Options::OPTION_KEY, [Mm_Aggr_Cache_Store::class, 'flush']);
     }
 
     public function maybeNotice(): void
